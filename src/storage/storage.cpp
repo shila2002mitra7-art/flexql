@@ -162,6 +162,13 @@ bool Database::insertRow(const std::string &name,
                          const std::vector<std::string> &values,
                          std::string &error)
 {
+    return insertRows(name, {values}, error);
+}
+
+bool Database::insertRows(const std::string &name,
+                         const std::vector<std::vector<std::string>> &rows,
+                         std::string &error)
+{
     std::lock_guard<std::mutex> lock(dbLock.mtx);
 
     if (tables.find(name) == tables.end())
@@ -172,88 +179,110 @@ bool Database::insertRow(const std::string &name,
 
     Table &t = tables[name];
 
-    if (values.size() != t.columns.size())
+    if (rows.empty())
     {
-        error = "Column count mismatch";
+        error = "No rows provided";
         return false;
     }
 
-    // duplicate primary key
-    if (!values.empty() && t.primaryIndex.exists(values[0]))
-    {
-        error = "Primary key already exists";
-        return false;
-    }
+    int expiryColumn = findColumnIndex(t, "EXPIRES_AT");
+    std::vector<Row> pendingRows;
+    std::vector<std::string> pendingKeys;
+    pendingRows.reserve(rows.size());
+    pendingKeys.reserve(rows.size());
 
-    // type validation
-    for (size_t i = 0; i < values.size(); i++)
+    for (const auto &values : rows)
     {
-        if (t.types[i] == "INT")
+        if (values.size() != t.columns.size())
         {
-            for (char c : values[i])
-            {
-                if (!isdigit(c) && c != '-')
-                {
-                    error = "Type error at " + t.columns[i];
-                    return false;
-                }
-            }
+            error = "Column count mismatch";
+            return false;
         }
-        else if (t.types[i] == "DECIMAL")
+
+        if (!values.empty())
         {
-            bool dot = false;
-            for (char c : values[i])
+            if (t.primaryIndex.exists(values[0]) ||
+                std::find(pendingKeys.begin(), pendingKeys.end(), values[0]) != pendingKeys.end())
             {
-                if (!isdigit(c) && c != '.' && c != '-')
-                {
-                    error = "Type error at " + t.columns[i];
-                    return false;
-                }
-                if (c == '.')
-                {
-                    if (dot)
-                    {
-                        error = "Invalid decimal";
-                        return false;
-                    }
-                    dot = true;
-                }
-            }
-        }
-        else if (t.types[i] == "DATETIME")
-        {
-            if (!isDateTime(values[i]))
-            {
-                error = "Invalid DATETIME";
+                error = "Primary key already exists";
                 return false;
             }
         }
-    }
 
-    Row row;
-    row.values = values;
-    row.expiryTime = std::time(nullptr) + 3600;
-
-    int expiryColumn = findColumnIndex(t, "EXPIRES_AT");
-    if (expiryColumn != -1)
-    {
-        double expiry = 0.0;
-        if (!tryParseNumber(values[expiryColumn], expiry))
+        for (size_t i = 0; i < values.size(); i++)
         {
-            error = "Invalid expiration timestamp";
-            return false;
+            if (t.types[i] == "INT")
+            {
+                for (char c : values[i])
+                {
+                    if (!isdigit(c) && c != '-')
+                    {
+                        error = "Type error at " + t.columns[i];
+                        return false;
+                    }
+                }
+            }
+            else if (t.types[i] == "DECIMAL")
+            {
+                bool dot = false;
+                for (char c : values[i])
+                {
+                    if (!isdigit(c) && c != '.' && c != '-')
+                    {
+                        error = "Type error at " + t.columns[i];
+                        return false;
+                    }
+                    if (c == '.')
+                    {
+                        if (dot)
+                        {
+                            error = "Invalid decimal";
+                            return false;
+                        }
+                        dot = true;
+                    }
+                }
+            }
+            else if (t.types[i] == "DATETIME")
+            {
+                if (!isDateTime(values[i]))
+                {
+                    error = "Invalid DATETIME";
+                    return false;
+                }
+            }
         }
-        row.expiryTime = static_cast<std::time_t>(expiry);
+
+        Row row;
+        row.values = values;
+        row.expiryTime = std::time(nullptr) + 3600;
+
+        if (expiryColumn != -1)
+        {
+            double expiry = 0.0;
+            if (!tryParseNumber(values[expiryColumn], expiry))
+            {
+                error = "Invalid expiration timestamp";
+                return false;
+            }
+            row.expiryTime = static_cast<std::time_t>(expiry);
+        }
+
+        pendingRows.push_back(std::move(row));
+        if (!values.empty())
+            pendingKeys.push_back(values[0]);
     }
 
-    t.rows.push_back(row);
+    size_t startIndex = t.rows.size();
+    t.rows.reserve(startIndex + pendingRows.size());
+    for (size_t i = 0; i < pendingRows.size(); ++i)
+    {
+        t.rows.push_back(std::move(pendingRows[i]));
+        if (!pendingKeys.empty())
+            t.primaryIndex.insert(pendingKeys[i], startIndex + i);
+    }
+
     queryCache.clear();
-
-    // primary index on first column
-    if (!values.empty())
-        t.primaryIndex.insert(values[0], t.rows.size() - 1);
-
-    std::cout << "Row inserted into: " << name << std::endl;
     return true;
 }
 

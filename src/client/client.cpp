@@ -7,6 +7,7 @@
 namespace
 {
 const std::string kResponseTerminator = "__FLEXQL_END__\n";
+const std::string kRequestTerminator = "__FLEXQL_SQL_END__\n";
 }
 
 int main() {
@@ -48,7 +49,8 @@ int main() {
 
         if (query.find("exit;") != std::string::npos) break;
 
-        send(sock, query.c_str(), query.length(), 0);
+        std::string payload = query + kRequestTerminator;
+        send(sock, payload.c_str(), static_cast<int>(payload.size()), 0);
 
         std::string response;
         char buffer[4096];

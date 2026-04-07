@@ -19,6 +19,7 @@ std::string trim(const std::string &str);
 
 std::string extractTableName(const std::string &query);
 std::vector<std::string> extractValues(const std::string &query);
+std::vector<std::vector<std::string>> extractValueBatches(const std::string &query);
 
 std::vector<std::string> extractColumns(const std::string &query);
 std::vector<std::string> extractTypes(const std::string &query);

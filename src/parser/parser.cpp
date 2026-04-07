@@ -130,40 +130,80 @@ std::vector<std::string> extractTypes(const std::string &query)
 // INSERT values
 std::vector<std::string> extractValues(const std::string &query)
 {
-    std::vector<std::string> values;
+    auto batches = extractValueBatches(query);
+    if (batches.empty())
+        return {};
+
+    return batches.front();
+}
+
+std::vector<std::vector<std::string>> extractValueBatches(const std::string &query)
+{
+    std::vector<std::vector<std::string>> batches;
 
     int valuesPos = toUpper(query).find("VALUES");
     if (valuesPos == -1)
-        return values;
+        return batches;
 
-    int start = query.find("(", valuesPos);
-    int end = query.find(")", start);
+    std::string payload = query.substr(valuesPos + 6);
+    std::vector<std::string> currentRow;
+    std::string currentValue;
+    bool inQuote = false;
+    bool inTuple = false;
 
-    if (start == -1 || end == -1)
-        return values;
-
-    std::string inside =
-        query.substr(start + 1, end - start - 1);
-
-    std::stringstream ss(inside);
-    std::string val;
-
-    while (getline(ss, val, ','))
+    for (char ch : payload)
     {
-        val = trim(val);
-
-        // remove quotes
-        if (val.size() >= 2 &&
-            val.front() == '\'' &&
-            val.back() == '\'')
+        if (ch == '\'')
         {
-            val = val.substr(1, val.size() - 2);
+            inQuote = !inQuote;
+            currentValue += ch;
+            continue;
         }
 
-        values.push_back(val);
+        if (!inQuote)
+        {
+            if (ch == '(')
+            {
+                inTuple = true;
+                currentRow.clear();
+                currentValue.clear();
+                continue;
+            }
+
+            if (ch == ',' && inTuple)
+            {
+                currentRow.push_back(trim(currentValue));
+                currentValue.clear();
+                continue;
+            }
+
+            if (ch == ')' && inTuple)
+            {
+                currentRow.push_back(trim(currentValue));
+
+                for (auto &value : currentRow)
+                {
+                    if (value.size() >= 2 &&
+                        value.front() == '\'' &&
+                        value.back() == '\'')
+                    {
+                        value = value.substr(1, value.size() - 2);
+                    }
+                }
+
+                batches.push_back(currentRow);
+                currentRow.clear();
+                currentValue.clear();
+                inTuple = false;
+                continue;
+            }
+        }
+
+        if (inTuple)
+            currentValue += ch;
     }
 
-    return values;
+    return batches;
 }
 
 // SELECT columns

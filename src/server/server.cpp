@@ -14,12 +14,14 @@ Database db;
 namespace
 {
 const std::string kResponseTerminator = "__FLEXQL_END__\n";
+const std::string kRequestTerminator = "__FLEXQL_SQL_END__\n";
 }
 
 // each client gets its own thread
 void handleClient(SOCKET client_socket)
 {
     char buffer[4097];
+    std::string pendingQuery;
 
     std::cout << "Client connected!\n";
 
@@ -31,145 +33,149 @@ void handleClient(SOCKET client_socket)
             break;
 
         buffer[recv_size] = '\0';
+        pendingQuery += buffer;
 
-        std::string query = trim(std::string(buffer));
-        if (query.empty())
-            continue;
-
-        QueryType type = parseQueryType(query);
-        std::string table = extractTableName(query);
-        std::string response;
-        std::string error;
-        bool success = false;
-
-        // CREATE TABLE
-        if (type == CREATE)
+        size_t terminatorPos = std::string::npos;
+        while ((terminatorPos = pendingQuery.find(kRequestTerminator)) != std::string::npos)
         {
-            auto columns = extractColumns(query);
-            auto types = extractTypes(query);
+            std::string query = trim(pendingQuery.substr(0, terminatorPos));
+            pendingQuery.erase(0, terminatorPos + kRequestTerminator.size());
 
-            success = db.createTable(table, columns, types, error);
-        }
+            if (query.empty())
+                continue;
 
-        // INSERT
-        else if (type == INSERT)
-        {
-            auto values = extractValues(query);
-            success = db.insertRow(table, values, error);
+            QueryType type = parseQueryType(query);
+            std::string table = extractTableName(query);
+            std::string response;
+            std::string error;
+            bool success = false;
 
-            if (success)
-                std::cout << "Inserted 1 row into " << table << "\n";
-        }
-
-        // JOIN
-        else if (type == JOIN)
-        {
-            std::string tableA = extractTableName(query);
-            std::string tableB = extractJoinTable(query);
-
-            std::string colA = extractJoinLeftColumn(query);
-            std::string colB = extractJoinRightColumn(query);
-            auto selectedCols = extractSelectColumns(query);
-            std::string whereCol;
-            std::string whereOp;
-            std::string whereValue;
-
-            if (hasWhere(query))
+            // CREATE TABLE
+            if (type == CREATE)
             {
-                whereCol = extractWhereColumnName(query);
-                whereOp = extractWhereOperator(query);
-                whereValue = extractWhereValue(query);
+                auto columns = extractColumns(query);
+                auto types = extractTypes(query);
+
+                success = db.createTable(table, columns, types, error);
             }
 
-            success = db.innerJoin(
-                tableA,
-                tableB,
-                colA,
-                colB,
-                selectedCols,
-                whereCol,
-                whereOp,
-                whereValue,
-                response,
-                error);
-        }
-
-        // SELECT
-        else if (type == SELECT)
-        {
-            auto selectedCols = extractSelectColumns(query);
-
-            // SELECT *
-            if (selectedCols.size() == 1 && selectedCols[0] == "*")
+            // INSERT
+            else if (type == INSERT)
             {
+                auto batches = extractValueBatches(query);
+                success = db.insertRows(table, batches, error);
+            }
+
+            // JOIN
+            else if (type == JOIN)
+            {
+                std::string tableA = extractTableName(query);
+                std::string tableB = extractJoinTable(query);
+
+                std::string colA = extractJoinLeftColumn(query);
+                std::string colB = extractJoinRightColumn(query);
+                auto selectedCols = extractSelectColumns(query);
+                std::string whereCol;
+                std::string whereOp;
+                std::string whereValue;
+
                 if (hasWhere(query))
                 {
-                    std::string whereCol = extractWhereColumnName(query);
-                    std::string val = extractWhereValue(query);
+                    whereCol = extractWhereColumnName(query);
+                    whereOp = extractWhereOperator(query);
+                    whereValue = extractWhereValue(query);
+                }
 
-                    if (!whereCol.empty() && isdigit(whereCol[0]))
+                success = db.innerJoin(
+                    tableA,
+                    tableB,
+                    colA,
+                    colB,
+                    selectedCols,
+                    whereCol,
+                    whereOp,
+                    whereValue,
+                    response,
+                    error);
+            }
+
+            // SELECT
+            else if (type == SELECT)
+            {
+                auto selectedCols = extractSelectColumns(query);
+
+                // SELECT *
+                if (selectedCols.size() == 1 && selectedCols[0] == "*")
+                {
+                    if (hasWhere(query))
                     {
-                        int col = std::stoi(whereCol);
-                        success = db.selectWhere(table, col, val, response, error);
+                        std::string whereCol = extractWhereColumnName(query);
+                        std::string val = extractWhereValue(query);
+
+                        if (!whereCol.empty() && isdigit(whereCol[0]))
+                        {
+                            int col = std::stoi(whereCol);
+                            success = db.selectWhere(table, col, val, response, error);
+                        }
+                        else
+                        {
+                            success = db.selectWhereColumn(table, whereCol, val, response, error);
+                        }
                     }
                     else
                     {
-                        success = db.selectWhereColumn(table, whereCol, val, response, error);
+                        success = db.selectAll(table, response, error);
                     }
                 }
+
+                // SELECT columns
                 else
                 {
-                    success = db.selectAll(table, response, error);
+                    if (hasWhere(query))
+                    {
+                        std::string whereCol = extractWhereColumnName(query);
+                        std::string val = extractWhereValue(query);
+
+                        std::string op = extractWhereOperator(query);
+
+                        success = db.selectColumnsWhereColumn(
+                            table,
+                            selectedCols,
+                            whereCol,
+                            op,
+                            val,
+                            response,
+                            error);
+                    }
+                    else
+                    {
+                        success = db.selectColumns(table, selectedCols, response, error);
+                    }
                 }
             }
 
-            // SELECT columns
             else
             {
-                if (hasWhere(query))
-                {
-                    std::string whereCol = extractWhereColumnName(query);
-                    std::string val = extractWhereValue(query);
-
-                    std::string op = extractWhereOperator(query);
-
-                    success = db.selectColumnsWhereColumn(
-                        table,
-                        selectedCols,
-                        whereCol,
-                        op,
-                        val,
-                        response,
-                        error);
-                }
-                else
-                {
-                    success = db.selectColumns(table, selectedCols, response, error);
-                }
+                error = "Unknown query";
             }
-        }
 
-        else
-        {
-            error = "Unknown query";
-        }
+            std::string payload;
+            if (!success)
+            {
+                payload = "ERROR|" + error + "\n";
+            }
+            else if (response.empty())
+            {
+                payload = "OK\n";
+            }
+            else
+            {
+                payload = response;
+            }
 
-        std::string payload;
-        if (!success)
-        {
-            payload = "ERROR|" + error + "\n";
+            payload += kResponseTerminator;
+            send(client_socket, payload.c_str(), static_cast<int>(payload.size()), 0);
         }
-        else if (response.empty())
-        {
-            payload = "OK\n";
-        }
-        else
-        {
-            payload = response;
-        }
-
-        payload += kResponseTerminator;
-        send(client_socket, payload.c_str(), static_cast<int>(payload.size()), 0);
     }
 
     closesocket(client_socket);

@@ -52,6 +52,10 @@ public:
                    const std::vector<std::string> &values,
                    std::string &error);
 
+    bool insertRows(const std::string &name,
+                    const std::vector<std::vector<std::string>> &rows,
+                    std::string &error);
+
     // SELECT OPS
     bool selectAll(const std::string &name,
                    std::string &result,

@@ -8,8 +8,8 @@
 using namespace std;
 using namespace std::chrono;
 
-static const long long DEFAULT_INSERT_ROWS = 10LL; // 100k rows by default for insertion benchmark
-static const int INSERT_BATCH_SIZE = 1; // if you implement batch inserts in flexql, you can increase this for better performance
+static const long long DEFAULT_INSERT_ROWS = 10LL; // pass a larger value on the command line for heavy benchmarks
+static const int INSERT_BATCH_SIZE = 1000;
 
 struct QueryStats {
     long long rows = 0;
