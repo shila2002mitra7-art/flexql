@@ -23,6 +23,7 @@ struct Table
     std::vector<std::string> types;
     std::unordered_map<std::string, size_t> columnIndex;
     std::vector<Row> rows;
+    size_t reservedRowCapacity = 0;
 
     // primary key index on first column
     PrimaryIndex primaryIndex;
@@ -53,7 +54,7 @@ public:
                    std::string &error);
 
     bool insertRows(const std::string &name,
-                    const std::vector<std::vector<std::string>> &rows,
+                    std::vector<std::vector<std::string>> rows,
                     std::string &error);
 
     // SELECT OPS

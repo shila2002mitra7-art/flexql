@@ -77,7 +77,7 @@ void handleClient(SOCKET client_socket)
             else if (type == INSERT)
             {
                 auto batches = extractValueBatches(query);
-                success = db.insertRows(table, batches, error);
+                success = db.insertRows(table, std::move(batches), error);
             }
 
             // JOIN

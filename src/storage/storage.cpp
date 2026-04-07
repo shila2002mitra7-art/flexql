@@ -99,6 +99,20 @@ bool isRowExpired(const Row &row)
 {
     return std::time(nullptr) > row.expiryTime;
 }
+
+void ensureTableCapacity(Table &table, size_t requiredRows)
+{
+    if (requiredRows <= table.reservedRowCapacity)
+        return;
+
+    size_t newCapacity = table.reservedRowCapacity == 0 ? 65536 : table.reservedRowCapacity;
+    while (newCapacity < requiredRows)
+        newCapacity *= 2;
+
+    table.rows.reserve(newCapacity);
+    table.primaryIndex.reserve(newCapacity);
+    table.reservedRowCapacity = newCapacity;
+}
 }
 
 // DATETIME validator
@@ -155,11 +169,13 @@ bool Database::insertRow(const std::string &name,
                          const std::vector<std::string> &values,
                          std::string &error)
 {
-    return insertRows(name, {values}, error);
+    std::vector<std::vector<std::string>> rows;
+    rows.push_back(values);
+    return insertRows(name, std::move(rows), error);
 }
 
 bool Database::insertRows(const std::string &name,
-                         const std::vector<std::vector<std::string>> &rows,
+                         std::vector<std::vector<std::string>> rows,
                          std::string &error)
 {
     std::lock_guard<std::mutex> lock(dbLock.mtx);
@@ -186,7 +202,7 @@ bool Database::insertRows(const std::string &name,
     pendingKeys.reserve(rows.size());
     pendingKeySet.reserve(rows.size() * 2);
 
-    for (const auto &values : rows)
+    for (auto &values : rows)
     {
         if (values.size() != t.columns.size())
         {
@@ -250,13 +266,13 @@ bool Database::insertRows(const std::string &name,
         }
 
         Row row;
-        row.values = values;
+        row.values = std::move(values);
         row.expiryTime = std::time(nullptr) + 3600;
 
         if (expiryColumn != -1)
         {
             double expiry = 0.0;
-            if (!tryParseNumber(values[expiryColumn], expiry))
+            if (!tryParseNumber(row.values[expiryColumn], expiry))
             {
                 error = "Invalid expiration timestamp";
                 return false;
@@ -270,7 +286,7 @@ bool Database::insertRows(const std::string &name,
     }
 
     size_t startIndex = t.rows.size();
-    t.rows.reserve(startIndex + pendingRows.size());
+    ensureTableCapacity(t, startIndex + pendingRows.size());
     for (size_t i = 0; i < pendingRows.size(); ++i)
     {
         t.rows.push_back(std::move(pendingRows[i]));
