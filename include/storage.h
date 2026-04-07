@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include <mutex>
+#include <ctime>
 
 #include "index/primary_index.h"
 #include "cache/lru_cache.h"
@@ -13,8 +14,6 @@
 struct Row
 {
     std::vector<std::string> values;
-
-    // assignment required expiration timestamp
     std::time_t expiryTime;
 };
 
@@ -22,6 +21,7 @@ struct Table
 {
     std::vector<std::string> columns;
     std::vector<std::string> types;
+    std::unordered_map<std::string, size_t> columnIndex;
     std::vector<Row> rows;
 
     // primary key index on first column

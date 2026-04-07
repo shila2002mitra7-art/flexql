@@ -15,6 +15,20 @@ namespace
 {
 const std::string kResponseTerminator = "__FLEXQL_END__\n";
 const std::string kRequestTerminator = "__FLEXQL_SQL_END__\n";
+
+bool sendAll(SOCKET sock, const std::string &payload)
+{
+    int totalSent = 0;
+    int length = static_cast<int>(payload.size());
+    while (totalSent < length)
+    {
+        int sent = send(sock, payload.c_str() + totalSent, length - totalSent, 0);
+        if (sent <= 0)
+            return false;
+        totalSent += sent;
+    }
+    return true;
+}
 }
 
 // each client gets its own thread
@@ -174,7 +188,8 @@ void handleClient(SOCKET client_socket)
             }
 
             payload += kResponseTerminator;
-            send(client_socket, payload.c_str(), static_cast<int>(payload.size()), 0);
+            if (!sendAll(client_socket, payload))
+                break;
         }
     }
 

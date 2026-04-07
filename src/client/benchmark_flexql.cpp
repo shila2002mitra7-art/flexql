@@ -9,7 +9,7 @@ using namespace std;
 using namespace std::chrono;
 
 static const long long DEFAULT_INSERT_ROWS = 10LL; // pass a larger value on the command line for heavy benchmarks
-static const int INSERT_BATCH_SIZE = 1000;
+static const int INSERT_BATCH_SIZE = 10000;
 
 struct QueryStats {
     long long rows = 0;

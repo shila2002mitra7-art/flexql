@@ -1,11 +1,6 @@
 #include "storage.h"
 #include <iostream>
-#include <cctype>
-#include <ctime>
-#include <sstream>
-#include <mutex>
-#include <algorithm>
-#include <stdexcept>
+#include <unordered_set>
 
 namespace
 {
@@ -94,14 +89,10 @@ std::string normalizeColumnName(const std::string &columnName)
 int findColumnIndex(const Table &table, const std::string &columnName)
 {
     const std::string normalized = normalizeColumnName(columnName);
-
-    for (size_t i = 0; i < table.columns.size(); ++i)
-    {
-        if (table.columns[i] == normalized)
-            return static_cast<int>(i);
-    }
-
-    return -1;
+    auto it = table.columnIndex.find(normalized);
+    if (it == table.columnIndex.end())
+        return -1;
+    return static_cast<int>(it->second);
 }
 
 bool isRowExpired(const Row &row)
@@ -149,6 +140,8 @@ bool Database::createTable(const std::string &name,
     Table t;
     t.columns = columns;
     t.types = types;
+    for (size_t i = 0; i < columns.size(); ++i)
+        t.columnIndex[columns[i]] = i;
 
     tables[name] = t;
     queryCache.clear();
@@ -188,8 +181,10 @@ bool Database::insertRows(const std::string &name,
     int expiryColumn = findColumnIndex(t, "EXPIRES_AT");
     std::vector<Row> pendingRows;
     std::vector<std::string> pendingKeys;
+    std::unordered_set<std::string> pendingKeySet;
     pendingRows.reserve(rows.size());
     pendingKeys.reserve(rows.size());
+    pendingKeySet.reserve(rows.size() * 2);
 
     for (const auto &values : rows)
     {
@@ -202,11 +197,12 @@ bool Database::insertRows(const std::string &name,
         if (!values.empty())
         {
             if (t.primaryIndex.exists(values[0]) ||
-                std::find(pendingKeys.begin(), pendingKeys.end(), values[0]) != pendingKeys.end())
+                pendingKeySet.find(values[0]) != pendingKeySet.end())
             {
                 error = "Primary key already exists";
                 return false;
             }
+            pendingKeySet.insert(values[0]);
         }
 
         for (size_t i = 0; i < values.size(); i++)

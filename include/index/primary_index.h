@@ -9,6 +9,7 @@ public:
     void insert(const std::string& key, size_t rowPos);
     bool exists(const std::string& key) const;
     size_t get(const std::string& key) const;
+    void reserve(size_t capacity);
     void clear();
 
 private:

@@ -145,11 +145,12 @@ std::vector<std::vector<std::string>> extractValueBatches(const std::string &que
     if (valuesPos == -1)
         return batches;
 
-    std::string payload = query.substr(valuesPos + 6);
     std::vector<std::string> currentRow;
     std::string currentValue;
     bool inQuote = false;
     bool inTuple = false;
+
+    std::string payload = query.substr(valuesPos + 6);
 
     for (char ch : payload)
     {

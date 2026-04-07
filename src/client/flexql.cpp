@@ -14,6 +14,19 @@ namespace
 {
 const std::string kResponseTerminator = "__FLEXQL_END__\n";
 const std::string kRequestTerminator = "__FLEXQL_SQL_END__\n";
+
+bool sendAll(SOCKET sock, const char *data, int length)
+{
+    int totalSent = 0;
+    while (totalSent < length)
+    {
+        int sent = send(sock, data + totalSent, length - totalSent, 0);
+        if (sent <= 0)
+            return false;
+        totalSent += sent;
+    }
+    return true;
+}
 }
 
 struct FlexQL
@@ -99,9 +112,7 @@ int flexql_exec(
     }
 
     std::string payload = std::string(sql) + kRequestTerminator;
-    int sent = send(db->sock, payload.c_str(), static_cast<int>(payload.size()), 0);
-
-    if (sent <= 0)
+    if (!sendAll(db->sock, payload.c_str(), static_cast<int>(payload.size())))
     {
         if (errmsg)
             *errmsg = _strdup("Failed to send SQL");

@@ -8,6 +8,19 @@ namespace
 {
 const std::string kResponseTerminator = "__FLEXQL_END__\n";
 const std::string kRequestTerminator = "__FLEXQL_SQL_END__\n";
+
+bool sendAll(SOCKET sock, const char *data, int length)
+{
+    int totalSent = 0;
+    while (totalSent < length)
+    {
+        int sent = send(sock, data + totalSent, length - totalSent, 0);
+        if (sent <= 0)
+            return false;
+        totalSent += sent;
+    }
+    return true;
+}
 }
 
 int main() {
@@ -50,7 +63,10 @@ int main() {
         if (query.find("exit;") != std::string::npos) break;
 
         std::string payload = query + kRequestTerminator;
-        send(sock, payload.c_str(), static_cast<int>(payload.size()), 0);
+        if (!sendAll(sock, payload.c_str(), static_cast<int>(payload.size()))) {
+            std::cout << "Failed to send query.\n";
+            break;
+        }
 
         std::string response;
         char buffer[4096];
